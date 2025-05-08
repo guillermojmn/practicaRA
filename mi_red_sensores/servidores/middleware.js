@@ -1,24 +1,63 @@
-module.exports = function(req, res, next) {
-    // Aquí definimos el criterio de redirección
-    const sensor = req.body.sensor;
+const mqtt = require('mqtt');
+const { Client } = require('pg');
 
-    // Si el sensor es 'temp', redirige al servidor 1
-    if (sensor === 'temp') {
-        req.url = '/datos';  // Aseguramos que el endpoint sea correcto
-        req.headers['Host'] = 'localhost:3001';  // Redirigimos a 3001
-        console.log(`🔄 Redirigiendo datos del sensor '${sensor}' a http://localhost:3001`);
-    }
-    // Si el sensor es 'hum', redirige al servidor 2
-    else if (sensor === 'hum') {
-        req.url = '/datos';
-        req.headers['Host'] = 'localhost:3002';  // Redirigimos a 3002
-        console.log(`🔄 Redirigiendo datos del sensor '${sensor}' a http://localhost:3002`);
-    }
-    // Si el sensor no es válido, dejamos que el proceso continue sin hacer nada
-    else {
-        console.log(`❌ Sensor no válido: ${sensor}`);
-        return res.status(400).send('Sensor no válido');
-    }
+// Configuración de la conexión a Mosquitto
+const MQTT_BROKER = 'mqtt://localhost';  // Dirección de tu broker Mosquitto
+const MQTT_TOPIC = 'sensor/#';  // Topic para suscribirse
 
-    next();  // Continúa con la siguiente función en el stack
-};
+// Configuración de la conexión a PostgreSQL
+const PG_CLIENT = new Client({
+    host: 'localhost',
+    database: 'mqtt_storage',  // Nombre de tu base de datos PostgreSQL
+    user: 'postgres',
+    password: 'tu_contraseña',
+    port: 5432
+});
+
+// Conectar a PostgreSQL
+PG_CLIENT.connect()
+    .then(() => {
+        console.log('Conectado a PostgreSQL');
+    })
+    .catch(err => {
+        console.error('Error al conectar a PostgreSQL:', err);
+        process.exit(1);
+    });
+
+// Conectar a Mosquitto
+const client = mqtt.connect(MQTT_BROKER);
+
+client.on('connect', () => {
+    console.log('Conectado a Mosquitto');
+    client.subscribe(MQTT_TOPIC, (err) => {
+        if (err) {
+            console.error('Error al suscribirse al topic:', err);
+        } else {
+            console.log(`Suscrito al topic ${MQTT_TOPIC}`);
+        }
+    });
+});
+
+// Manejar los mensajes que llegan a través de MQTT
+client.on('message', (topic, message) => {
+    // Parsear el mensaje de JSON
+    const payload = JSON.parse(message.toString());
+    console.log('Mensaje recibido:', payload);
+
+    // Insertar los datos en PostgreSQL
+    const query = 'INSERT INTO sensor_data (sensor_id, timestamp, value) VALUES ($1, $2, $3)';
+    const values = [payload.sensor_id, payload.timestamp, payload.value];
+
+    PG_CLIENT.query(query, values)
+        .then(res => {
+            console.log('Datos insertados en la base de datos');
+        })
+        .catch(err => {
+            console.error('Error al insertar datos en PostgreSQL:', err);
+        });
+});
+
+// Manejo de errores de conexión de MQTT
+client.on('error', (err) => {
+    console.error('Error en la conexión MQTT:', err);
+});
