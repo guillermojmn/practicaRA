@@ -10,7 +10,7 @@ const PG_CLIENT = new Client({
     host: 'localhost',
     database: 'mqtt_storage',  // Nombre de tu base de datos PostgreSQL
     user: 'postgres',
-    password: 'tu_contraseña',
+    password: 'alumno',
     port: 5432
 });
 
